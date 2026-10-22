@@ -1,0 +1,41 @@
+# S1: which value of APP_PRIVATE_KEY does a reusable workflow job see?
+name: called
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        default: ""
+      label:
+        type: string
+        required: true
+    secrets:
+      APP_PRIVATE_KEY:
+        required: false
+permissions: {}
+jobs:
+  string-form:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: ${{ inputs.environment }}
+    steps:
+      - env:
+          KEY: ${{ secrets.APP_PRIVATE_KEY }}
+          LABEL: ${{ inputs.label }}
+          ENV_NAME: ${{ inputs.environment }}
+        run: |
+          if [ -z "$KEY" ]; then h=empty; else h=$(printf %s "$KEY" | sha256sum | cut -c1-12); fi
+          echo "$LABEL string-form env='$ENV_NAME' key=$h" | tee -a "$GITHUB_STEP_SUMMARY"
+  name-form:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment:
+      name: ${{ inputs.environment }}
+    steps:
+      - env:
+          KEY: ${{ secrets.APP_PRIVATE_KEY }}
+          LABEL: ${{ inputs.label }}
+          ENV_NAME: ${{ inputs.environment }}
+        run: |
+          if [ -z "$KEY" ]; then h=empty; else h=$(printf %s "$KEY" | sha256sum | cut -c1-12); fi
+          echo "$LABEL name-form env='$ENV_NAME' key=$h" | tee -a "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,78 @@
+# S4: release-please with the bot, moving vX, outputs for the next job.
+name: release
+on:
+  push:
+    branches: [main]
+permissions: {}
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      released: ${{ steps.rp.outputs.release_created }}
+      tag: ${{ steps.rp.outputs.tag_name }}
+      major: ${{ steps.rp.outputs.major }}
+      sha: ${{ steps.rp.outputs.sha }}
+    steps:
+      - id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+      - id: rp
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.token.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          target-branch: ${{ github.ref_name }}
+      - name: Move the major tag
+        if: steps.rp.outputs.release_created == 'true' && steps.rp.outputs.major != '0'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          REPO: ${{ github.repository }}
+          MAJOR: ${{ steps.rp.outputs.major }}
+          SHA: ${{ steps.rp.outputs.sha }}
+        run: |
+          ref="tags/v$MAJOR"
+          if gh api "repos/$REPO/git/ref/$ref" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/$REPO/git/refs/$ref" -f sha="$SHA" -F force=true --jq .object.sha
+            echo "moved v$MAJOR to $SHA" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            gh api -X POST "repos/$REPO/git/refs" -f ref="refs/$ref" -f sha="$SHA" --jq .object.sha
+            echo "created v$MAJOR at $SHA" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+  negative:
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: GITHUB_TOKEN must not create a release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ needs.release.outputs.sha }}
+        run: |
+          if gh api -X POST "repos/$REPO/git/refs" -f ref=refs/tags/v99 -f sha="$SHA" 2>err.txt; then
+            echo "UNEXPECTED: GITHUB_TOKEN created v99" | tee -a "$GITHUB_STEP_SUMMARY"; exit 1
+          fi
+          echo "rejected as expected: $(head -c 200 err.txt)" | tee -a "$GITHUB_STEP_SUMMARY"
+  publish:
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - env:
+          TAG: ${{ needs.release.outputs.tag }}
+          SHA: ${{ needs.release.outputs.sha }}
+        run: echo "would publish $TAG from $SHA in the same run" | tee -a "$GITHUB_STEP_SUMMARY"

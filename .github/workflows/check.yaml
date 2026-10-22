@@ -1,0 +1,10 @@
+# S3: started only by workflow_dispatch; does it satisfy a required check?
+name: check
+on: workflow_dispatch
+permissions: {}
+jobs:
+  required:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - run: echo "check passed on $GITHUB_REF at $GITHUB_SHA"
