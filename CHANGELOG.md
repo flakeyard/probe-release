@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/flakeyard/probe-release/compare/v1.0.0...v1.1.0) (2026-10-22)
+
+
+### Features
+
+* third feature ([8bbc402](https://github.com/flakeyard/probe-release/commit/8bbc402ca3422cd1c6564e0d7e4a9072a695c9e6))
+
 ## 1.0.0 (2026-10-22)
 
 
