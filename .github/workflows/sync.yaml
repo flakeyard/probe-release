@@ -1,0 +1,39 @@
+# Fix candidate: point every vX to its latest non-prerelease vX.Y.Z, idempotently.
+name: sync
+on: workflow_dispatch
+permissions: {}
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+          permission-contents: write
+      - name: Sync major tags
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Published, non-draft, non-prerelease releases with a vX.Y.Z tag.
+          gh api --paginate "repos/$REPO/releases" \
+            --jq '.[] | select(.draft | not) | select(.prerelease | not) | .tag_name' \
+            | grep -E '^v[1-9][0-9]*\.[0-9]+\.[0-9]+$' | sort -V > releases.txt
+          for major in $(sed -E 's/^v([0-9]+)\..*/\1/' releases.txt | sort -un); do
+            latest=$(grep -E "^v$major\." releases.txt | tail -1)
+            sha=$(gh api "repos/$REPO/commits/$latest" --jq .sha)
+            current=$(gh api "repos/$REPO/git/ref/tags/v$major" --jq .object.sha 2>/dev/null || true)
+            if [ "$current" = "$sha" ]; then
+              echo "v$major already at $latest" | tee -a "$GITHUB_STEP_SUMMARY"
+            elif [ -n "$current" ]; then
+              gh api -X PATCH "repos/$REPO/git/refs/tags/v$major" -f sha="$sha" -F force=true --jq .object.sha
+              echo "moved v$major to $latest ($sha)" | tee -a "$GITHUB_STEP_SUMMARY"
+            else
+              gh api -X POST "repos/$REPO/git/refs" -f ref="refs/tags/v$major" -f sha="$sha" --jq .object.sha
+              echo "created v$major at $latest ($sha)" | tee -a "$GITHUB_STEP_SUMMARY"
+            fi
+          done
